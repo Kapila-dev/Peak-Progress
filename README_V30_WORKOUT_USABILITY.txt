@@ -1,0 +1,1 @@
+Peak Progress v30: focused workout usability pass. Adds in-workout add exercise, swap shortcut, remove exercise, copy exercise, and move exercises up/down. Upload/replace all root files in GitHub Pages repo.
