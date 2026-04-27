@@ -1,0 +1,1 @@
+Peak Progress v27 fixes Android back navigation, adaptive plan apply button, and add/remove set controls in active workout. Upload/replace all files in the repo root, wait for GitHub Pages redeploy, then refresh/reinstall if needed.
