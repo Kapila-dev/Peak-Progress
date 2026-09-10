@@ -1,4 +1,4 @@
-name: Deploy Peak Progress v2.23
+name: Finalize Peak Progress v2.23
 on:
   push:
     paths:
@@ -7,31 +7,54 @@ on:
 permissions:
   contents: write
 jobs:
-  deploy:
+  finalize:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Reconstruct production files
+      - name: Rebuild launcher icons and clean staging
         shell: bash
         run: |
           set -euo pipefail
-          cat .deploy-v2.23/index-00.b64 .deploy-v2.23/index-01a1.b64 .deploy-v2.23/index-01a2a-1.b64 .deploy-v2.23/index-01a2a-2.b64 .deploy-v2.23/index-01a2a-3a.b64 .deploy-v2.23/index-01a2a-3b.b64 .deploy-v2.23/index-01a2b.b64 .deploy-v2.23/index-01b.b64 .deploy-v2.23/index-02.b64 .deploy-v2.23/index-03.b64 .deploy-v2.23/index-04.b64 .deploy-v2.23/index-05.b64 | tr -cd 'A-Za-z0-9+/=' | base64 -d | gzip -d > index.html
-          cp .deploy-v2.23/manifest.webmanifest manifest.webmanifest
-          cp .deploy-v2.23/sw.js sw.js
-          grep -q "const APP_VERSION='2.23'" index.html
-          grep -q "peak-progress-v2-23" sw.js
-      - name: Publish atomically
+          cat .deploy-v2.23/icon192stage-00.b64 .deploy-v2.23/icon192stage-01.b64 .deploy-v2.23/icon192stage-02.b64 .deploy-v2.23/icon192stage-03.b64 .deploy-v2.23/icon192stage-04.b64 .deploy-v2.23/icon192stage-05.b64 | tr -cd 'A-Za-z0-9+/=' | base64 -d > icon-192.png
+          python - <<'PY'
+          import struct
+          p='icon-192.png'
+          b=open(p,'rb').read(24)
+          assert b[:8] == b'\x89PNG\r\n\x1a\n'
+          w,h=struct.unpack('>II',b[16:24])
+          assert (w,h)==(192,192), (w,h)
+          PY
+          if command -v magick >/dev/null 2>&1; then
+            magick icon-192.png -resize 512x512 icon-512.png
+          elif command -v convert >/dev/null 2>&1; then
+            convert icon-192.png -resize 512x512 icon-512.png
+          else
+            python -m pip install --quiet pillow
+            python - <<'PY'
+          from PIL import Image
+          im=Image.open('icon-192.png').convert('RGBA')
+          im.resize((512,512), Image.Resampling.LANCZOS).save('icon-512.png')
+          PY
+          fi
+          python - <<'PY'
+          import struct
+          for p,expected in [('icon-192.png',(192,192)),('icon-512.png',(512,512))]:
+              b=open(p,'rb').read(24)
+              assert b[:8] == b'\x89PNG\r\n\x1a\n'
+              assert struct.unpack('>II',b[16:24]) == expected
+          PY
+          sed -i "s/peak-progress-v2-23/peak-progress-v2-23-icons1/" sw.js
+          grep -q "peak-progress-v2-23-icons1" sw.js
+          rm -rf .deploy-v2.23
+          rm -f .github/workflows/deploy-v223.yml
+      - name: Publish final production cleanup
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html manifest.webmanifest sw.js
-          if git diff --cached --quiet; then
-            echo "Production files already current"
-            exit 0
-          fi
-          git commit -m "Deploy Peak Progress 2.0 v2.23"
+          git add -A
+          git commit -m "Finalize Peak Progress v2.23 production"
           git push origin HEAD:main
