@@ -17,7 +17,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .deploy-v2.23/index-00.b64 .deploy-v2.23/index-01a1.b64 .deploy-v2.23/index-01a2a.b64 .deploy-v2.23/index-01a2b.b64 .deploy-v2.23/index-01b.b64 .deploy-v2.23/index-02.b64 .deploy-v2.23/index-03.b64 .deploy-v2.23/index-04.b64 .deploy-v2.23/index-05.b64 | tr -cd 'A-Za-z0-9+/=' | base64 -d | gzip -d > index.html
+          cat .deploy-v2.23/index-00.b64 .deploy-v2.23/index-01a1.b64 .deploy-v2.23/index-01a2a-1.b64 .deploy-v2.23/index-01a2a-2.b64 .deploy-v2.23/index-01a2a-3a.b64 .deploy-v2.23/index-01a2a-3b.b64 .deploy-v2.23/index-01a2b.b64 .deploy-v2.23/index-01b.b64 .deploy-v2.23/index-02.b64 .deploy-v2.23/index-03.b64 .deploy-v2.23/index-04.b64 .deploy-v2.23/index-05.b64 | tr -cd 'A-Za-z0-9+/=' | base64 -d | gzip -d > index.html
           cp .deploy-v2.23/manifest.webmanifest manifest.webmanifest
           cp .deploy-v2.23/sw.js sw.js
           grep -q "const APP_VERSION='2.23'" index.html
