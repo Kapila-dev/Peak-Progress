@@ -1,0 +1,34 @@
+name: Apply v2.24 History Multi-Select
+on:
+  push:
+    branches: [main]
+    paths: ['.preview-v224-history-multiselect-trigger']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Apply patch
+        run: |
+          set -euo pipefail
+          node .v224/patch-history-multiselect.js
+          node - <<'JS'
+          const fs=require('fs'),s=fs.readFileSync('preview-v224/index.html','utf8');
+          for(const m of ["let historyTypes=[]","function toggleHistoryType","historyTypes.includes('strength')","const APP_VERSION='2.24-preview6'"])if(!s.includes(m))throw new Error(m)
+          const js=s.match(/<script>([\s\S]*)<\/script>/);if(!js)throw new Error('script missing');fs.writeFileSync('/tmp/app.js',js[1]);
+          JS
+          node --check /tmp/app.js
+          grep -q 'peak-progress-v224-preview-6' preview-v224/sw.js
+      - name: Publish
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .preview-v224-history-multiselect-trigger .github/workflows/apply-v224-history-multiselect.yml .v224/patch-history-multiselect.js
+          git add preview-v224/index.html preview-v224/sw.js
+          git commit -m "Integrate meditation into multi-select history filters"
+          git push origin HEAD:main
