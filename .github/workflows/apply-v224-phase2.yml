@@ -1,0 +1,66 @@
+name: Apply v2.24 Phase 2
+on:
+  push:
+    branches: [v2.24-development]
+    paths: ['.v224-phase2-trigger']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2.24-development
+          fetch-depth: 0
+      - name: Apply Phase 2 patch
+        run: |
+          set -euo pipefail
+          cat .v224/phase2.part* | base64 -d | gzip -dc > /tmp/phase2.patch
+          git apply --check /tmp/phase2.patch
+          git apply /tmp/phase2.patch
+      - name: Generate offline meditation audio
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then sudo apt-get update -qq && sudo apt-get install -y ffmpeg; fi
+          mkdir -p audio
+          ffmpeg -y -loglevel error -f lavfi -i "anoisesrc=color=pink:duration=45:sample_rate=32000:amplitude=.55" -af "highpass=f=350,lowpass=f=9500,volume=.55" -ac 1 -ar 32000 -codec:a libmp3lame -b:a 72k audio/rain.mp3
+          ffmpeg -y -loglevel error -f lavfi -i "anoisesrc=color=brown:duration=45:sample_rate=32000:amplitude=.8" -f lavfi -i "anoisesrc=color=white:duration=45:sample_rate=32000:amplitude=.22" -filter_complex "[0:a]lowpass=f=1100,tremolo=f=0.11:d=0.65,volume=.75[roar];[1:a]highpass=f=700,lowpass=f=5000,tremolo=f=0.11:d=0.82,volume=.18[foam];[roar][foam]amix=inputs=2:normalize=0,alimiter=limit=.8" -ac 1 -ar 32000 -codec:a libmp3lame -b:a 72k audio/ocean.mp3
+          ffmpeg -y -loglevel error -f lavfi -i "anoisesrc=color=white:duration=45:sample_rate=32000:amplitude=.55" -f lavfi -i "anoisesrc=color=pink:duration=45:sample_rate=32000:amplitude=.55" -filter_complex "[0:a]highpass=f=220,lowpass=f=7000,volume=.38[water];[1:a]lowpass=f=1300,tremolo=f=0.075:d=0.72,volume=.32[wind];[water][wind]amix=inputs=2:normalize=0,alimiter=limit=.8" -ac 1 -ar 32000 -codec:a libmp3lame -b:a 72k audio/river-wind.mp3
+          ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=523.25:duration=4:sample_rate=32000" -f lavfi -i "sine=frequency=783.99:duration=4:sample_rate=32000" -f lavfi -i "sine=frequency=1046.5:duration=4:sample_rate=32000" -filter_complex "[0:a]volume=.38,afade=t=out:st=.15:d=3.6[a0];[1:a]volume=.18,afade=t=out:st=.1:d=3.8[a1];[2:a]volume=.08,afade=t=out:st=.05:d=3.9[a2];[a0][a1][a2]amix=inputs=3:normalize=0,alimiter=limit=.72" -ac 1 -ar 32000 -codec:a libmp3lame -b:a 72k audio/soft-chime.mp3
+      - name: Update service worker
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('sw.js'); s=p.read_text()
+          s=s.replace("const CACHE='peak-progress-v2-23-icons1';","const CACHE='peak-progress-v2-24-dev2';")
+          old="const CORE=['./','./index.html','./manifest.webmanifest?v=2231','./icon-192.png?v=2231','./icon-512.png?v=2231'];"
+          new="const CORE=['./','./index.html','./manifest.webmanifest?v=2231','./icon-192.png?v=2231','./icon-512.png?v=2231','./audio/rain.mp3','./audio/ocean.mp3','./audio/river-wind.mp3','./audio/soft-chime.mp3'];"
+          if old not in s: raise SystemExit('SW CORE marker missing')
+          p.write_text(s.replace(old,new))
+          PY
+      - name: Validate
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text()
+          for marker in ["const APP_VERSION='2.24-dev2'",'function meditationView','function prepareMeditationImport','Training coverage']:
+              assert marker in s, marker
+          m=re.search(r'<script>(.*)</script>',s,re.S); assert m
+          Path('/tmp/app.js').write_text(m.group(1))
+          for f in ['audio/rain.mp3','audio/ocean.mp3','audio/river-wind.mp3','audio/soft-chime.mp3']:
+              assert Path(f).stat().st_size > 1000
+          PY
+          node --check /tmp/app.js
+      - name: Commit Phase 2
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .v224/phase2.part* .v224-phase2-trigger .github/workflows/apply-v224-phase2.yml
+          rmdir .v224 2>/dev/null || true
+          git add index.html sw.js audio/
+          git commit -m "Build v2.24 phase 2 meditation and history"
+          git push origin HEAD:v2.24-development
