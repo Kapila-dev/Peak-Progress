@@ -1,0 +1,108 @@
+name: Build v2.24 Safe Preview
+on:
+  push:
+    branches: [main]
+    paths: ['.preview-v224-trigger']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Build isolated preview
+        run: |
+          set -euo pipefail
+          git fetch origin v2.24-development
+          rm -rf preview-v224
+          mkdir -p preview-v224/audio
+          git show origin/v2.24-development:index.html > preview-v224/index.html
+          for f in rain.mp3 ocean.mp3 river-wind.mp3 soft-chime.mp3; do
+            git show origin/v2.24-development:audio/$f > preview-v224/audio/$f
+          done
+          cp icon-192.png preview-v224/icon-192.png
+          cp icon-512.png preview-v224/icon-512.png
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('preview-v224/index.html')
+          s=p.read_text()
+          reps={
+            '<title>Peak Progress</title>':'<title>Peak Progress 2.24 Preview</title>',
+            '<meta name="apple-mobile-web-app-title" content="Peak Progress">':'<meta name="apple-mobile-web-app-title" content="Peak Preview">',
+            'manifest.webmanifest?v=2231':'manifest.webmanifest?v=224preview1',
+            'icon-192.png?v=2231':'icon-192.png?v=224preview1',
+            "const KEY='peak_progress_v2';":"const KEY='peak_progress_v224_preview';",
+            "const LEGACY='pp_v36';":"const LEGACY='pp_v36_preview_disabled';",
+            "const DB='peak_progress_media';":"const DB='peak_progress_media_v224_preview';",
+            "const APP_VERSION='2.24-dev2';":"const APP_VERSION='2.24-preview';",
+            "sessionStorage.getItem('pp_migration_notice')":"sessionStorage.getItem('pp_v224_preview_migration_notice')",
+            "sessionStorage.removeItem('pp_migration_notice')":"sessionStorage.removeItem('pp_v224_preview_migration_notice')",
+            "sessionStorage.setItem('pp_migration_notice'":"sessionStorage.setItem('pp_v224_preview_migration_notice'",
+            "a.download='peak-progress-full-backup.json'":"a.download='peak-progress-v224-preview-backup.json'",
+            "Reset Peak Progress 2.0 data and equipment photos on this device?":"Reset ONLY the v2.24 preview data and preview photos on this device?",
+            "toast('Peak Progress reset')":"toast('Preview data reset')"
+          }
+          for a,b in reps.items():
+            if a not in s:
+              raise SystemExit(f'missing replacement marker: {a[:80]}')
+            s=s.replace(a,b)
+          css='''\n.previewstrip{position:sticky;top:0;z-index:9999;text-align:center;background:#4a0b16;color:#f0e8e3;border-bottom:1px solid #7d2638;padding:5px 8px;font-size:10px;font-weight:800;letter-spacing:.15em;text-transform:uppercase}.previewstrip span{opacity:.72;font-weight:600;letter-spacing:.08em}\n'''
+          s=s.replace('</style>',css+'</style>',1)
+          s=s.replace('<body>','<body><div class="previewstrip">v2.24 Safe Preview <span>· separate data</span></div>',1)
+          p.write_text(s)
+          PY
+          cat > preview-v224/manifest.webmanifest <<'JSON'
+          {
+            "id": "./",
+            "name": "Peak Progress 2.24 Preview",
+            "short_name": "Peak Preview",
+            "description": "An isolated phone-test preview of Peak Progress v2.24.",
+            "start_url": "./",
+            "scope": "./",
+            "display": "standalone",
+            "background_color": "#090708",
+            "theme_color": "#090708",
+            "icons": [
+              {"src":"icon-192.png?v=224preview1","sizes":"192x192","type":"image/png","purpose":"any"},
+              {"src":"icon-512.png?v=224preview1","sizes":"512x512","type":"image/png","purpose":"any"}
+            ]
+          }
+          JSON
+          cat > preview-v224/sw.js <<'JS'
+          const CACHE='peak-progress-v224-preview-1';
+          const CORE=['./','./index.html','./manifest.webmanifest?v=224preview1','./icon-192.png?v=224preview1','./icon-512.png?v=224preview1','./audio/rain.mp3','./audio/ocean.mp3','./audio/river-wind.mp3','./audio/soft-chime.mp3'];
+          self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));
+          self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('peak-progress-v224-preview-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+          self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{let copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));return r}).catch(()=>caches.match('./index.html'))))});
+          JS
+      - name: Validate isolation and syntax
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, json
+          s=Path('preview-v224/index.html').read_text()
+          required=["const KEY='peak_progress_v224_preview'","const LEGACY='pp_v36_preview_disabled'","const DB='peak_progress_media_v224_preview'","const APP_VERSION='2.24-preview'",'v2.24 Safe Preview','function meditationView','Training coverage']
+          for x in required: assert x in s, x
+          forbidden=["const KEY='peak_progress_v2';","const LEGACY='pp_v36';","const DB='peak_progress_media';"]
+          for x in forbidden: assert x not in s, x
+          m=re.search(r'<script>(.*)</script>',s,re.S); assert m
+          Path('/tmp/preview-app.js').write_text(m.group(1))
+          man=json.loads(Path('preview-v224/manifest.webmanifest').read_text())
+          assert man['id']=='./' and man['scope']=='./' and man['start_url']=='./'
+          for f in ['preview-v224/audio/rain.mp3','preview-v224/audio/ocean.mp3','preview-v224/audio/river-wind.mp3','preview-v224/audio/soft-chime.mp3']:
+            assert Path(f).stat().st_size>1000
+          PY
+          node --check /tmp/preview-app.js
+      - name: Publish preview without changing production app
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f .preview-v224-trigger .github/workflows/build-v224-preview.yml
+          git add preview-v224/
+          git commit -m "Publish isolated v2.24 phone-test preview"
+          git push origin HEAD:main
